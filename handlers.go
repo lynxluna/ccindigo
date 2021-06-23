@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/mail"
@@ -22,23 +23,28 @@ func writeJSONError(w http.ResponseWriter, status int, message string) {
 	w.Write(payload)
 }
 
-func registrationHandler(w http.ResponseWriter, r *http.Request) {
-	email := r.PostFormValue("email")
-	pass := r.PostFormValue("password")
+func isValidEmail(email string) bool {
+	_, err := mail.ParseAddress(email)
+	return err == nil
+}
 
-	if _, err := mail.ParseAddress(email); err != nil {
-		writeJSONError(w, http.StatusBadRequest, "Invalid Email Address")
-		return
-	}
+func isValidPassword(pass string) bool {
+	const maxPasswordLen = 8
+	return len(pass) > maxPasswordLen
+}
 
-	if len(pass) < 8 {
-		writeJSONError(w, http.StatusBadRequest, "Invalid Password")
-		return
-	}
+func saveUser(email, pass string) (*uuid.UUID, error) {
+
 	db, err := sql.Open("postgres", dbstr)
-	if err != nil || db.Ping() != nil {
-		writeJSONError(w, http.StatusInternalServerError, "Unknown Errors")
-		return
+
+	if err != nil {
+		return nil, err
+	}
+
+	err = db.Ping()
+
+	if err != nil {
+		return nil, err
 	}
 
 	defer db.Close()
@@ -53,14 +59,37 @@ func registrationHandler(w http.ResponseWriter, r *http.Request) {
 	if _, err := db.Exec(regCommand, newUserID, email, newPwHash); err != nil {
 
 		if pqError, ok := err.(*pq.Error); ok && pqError.Code == "23505" {
-			writeJSONError(w, http.StatusBadRequest, "User already exists")
-			return
+			return nil, errors.New("User already exists")
 		}
 
-		writeJSONError(w, http.StatusInternalServerError, err.Error())
+		return nil, err
+	}
+
+	return &newUserID, nil
+}
+
+func registrationHandler(w http.ResponseWriter, r *http.Request) {
+	email := r.PostFormValue("email")
+	pass := r.PostFormValue("password")
+
+	if !isValidEmail(email) {
+		writeJSONError(w, http.StatusBadRequest, "Invalid Email Address")
 		return
 	}
-	payload, _ := json.Marshal(RegistrationResp{UserID: newUserID})
+
+	if !isValidPassword(pass) {
+		writeJSONError(w, http.StatusBadRequest, "Invalid Password")
+		return
+	}
+
+	userId, err := saveUser(email, pass)
+
+	if err != nil {
+		writeJSONError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	payload, _ := json.Marshal(RegistrationResp{UserID: *userId})
 	w.WriteHeader(http.StatusCreated)
 	w.Write(payload)
 }

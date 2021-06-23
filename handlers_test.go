@@ -14,6 +14,45 @@ import (
 
 const emptyCommand = "TRUNCATE TABLE USERS"
 
+var testEmails = []struct {
+	Mail   string
+	Result bool
+}{
+	{"abcdef", false},
+	{"abc@dateline.example.foo", true},
+	{"", false},
+}
+
+func TestEmailValidation(t *testing.T) {
+	for _, item := range testEmails {
+		res := isValidEmail(item.Mail)
+		if res != item.Result {
+			t.Errorf("Validation error '%s' should be '%v', but got '%v'",
+				item.Mail, item.Result, res)
+		}
+	}
+}
+
+var testPasswords = []struct {
+	Password string
+	Result   bool
+}{
+	{"", false},
+	{"abced", false},
+	{"password-valid", true},
+}
+
+func TestPasswordValidation(t *testing.T) {
+	for _, item := range testPasswords {
+		res := isValidPassword(item.Password)
+
+		if res != item.Result {
+			t.Errorf("Validation Error '%s' should be '%v', but got '%v'",
+				item.Password, item.Result, res)
+		}
+	}
+}
+
 var regTests = []struct {
 	Username     string
 	Password     string
