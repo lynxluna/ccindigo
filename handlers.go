@@ -12,6 +12,14 @@ import (
 
 const dbstr = "user=postgres password=postgres dbname=indigo sslmode=disable"
 
+type JSONError struct {
+	Message string `json:"message,omitempty"`
+}
+
+type RegistrationResp struct {
+	UserID uuid.UUID `json:"user_id,omitempty"`
+}
+
 func writeJSONError(w http.ResponseWriter, status int, message string) {
 	w.WriteHeader(http.StatusBadRequest)
 	errJSON := JSONError{Message: "Invalid Email Address"}
