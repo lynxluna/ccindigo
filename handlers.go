@@ -5,45 +5,39 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
-	"github.com/google/uuid"
-	"github.com/lib/pq"
 	"net/http"
 	"net/mail"
+
+	"github.com/google/uuid"
+	"github.com/lib/pq"
 )
 
 const dbstr = "user=postgres password=postgres dbname=indigo sslmode=disable"
+
+func writeJSONError(w http.ResponseWriter, status int, message string) {
+	w.WriteHeader(http.StatusBadRequest)
+	errJSON := JSONError{Message: "Invalid Email Address"}
+	payload, _ := json.Marshal(errJSON)
+
+	w.Write(payload)
+}
 
 func registrationHandler(w http.ResponseWriter, r *http.Request) {
 	email := r.PostFormValue("email")
 	pass := r.PostFormValue("password")
 
 	if _, err := mail.ParseAddress(email); err != nil {
-		w.WriteHeader(http.StatusBadRequest)
-
-		errJSON := JSONError{Message: "Invalid Email Address"}
-		payload, _ := json.Marshal(errJSON)
-
-		w.Write(payload)
+		writeJSONError(w, http.StatusBadRequest, "Invalid Email Address")
 		return
 	}
 
 	if len(pass) < 8 {
-		w.WriteHeader(http.StatusBadRequest)
-
-		errJSON := JSONError{Message: "Invalid Password"}
-		payload, _ := json.Marshal(errJSON)
-
-		w.Write(payload)
+		writeJSONError(w, http.StatusBadRequest, "Invalid Password")
 		return
 	}
 	db, err := sql.Open("postgres", dbstr)
 	if err != nil || db.Ping() != nil {
-		w.WriteHeader(http.StatusInternalServerError)
-
-		errJSON := JSONError{Message: "Unknown Errors"}
-		payload, _ := json.Marshal(errJSON)
-
-		w.Write(payload)
+		writeJSONError(w, http.StatusInternalServerError, "Unknown Errors")
 		return
 	}
 
@@ -59,22 +53,11 @@ func registrationHandler(w http.ResponseWriter, r *http.Request) {
 	if _, err := db.Exec(regCommand, newUserID, email, newPwHash); err != nil {
 
 		if pqError, ok := err.(*pq.Error); ok && pqError.Code == "23505" {
-			w.WriteHeader(http.StatusBadRequest)
-			payload, _ := json.Marshal(JSONError{Message: "User already exists"})
-			w.Write(payload)
+			writeJSONError(w, http.StatusBadRequest, "User already exists")
 			return
 		}
 
-		w.WriteHeader(http.StatusInternalServerError)
-
-		errJSON := JSONError{Message: err.Error()}
-		payload, _ := json.Marshal(errJSON)
-
-		pqError, _ := err.(*pq.Error)
-
-		fmt.Println(pqError.Code)
-
-		w.Write(payload)
+		writeJSONError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 	payload, _ := json.Marshal(RegistrationResp{UserID: newUserID})
