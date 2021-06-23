@@ -1,13 +1,10 @@
 package main
 
 import (
-	"crypto/sha256"
 	"database/sql"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"net/http"
-	"net/mail"
 
 	"github.com/google/uuid"
 	"github.com/lib/pq"
@@ -23,17 +20,7 @@ func writeJSONError(w http.ResponseWriter, status int, message string) {
 	w.Write(payload)
 }
 
-func isValidEmail(email string) bool {
-	_, err := mail.ParseAddress(email)
-	return err == nil
-}
-
-func isValidPassword(pass string) bool {
-	const maxPasswordLen = 8
-	return len(pass) > maxPasswordLen
-}
-
-func saveUser(email, pass string) (*uuid.UUID, error) {
+func saveUser(user User) (*uuid.UUID, error) {
 
 	db, err := sql.Open("postgres", dbstr)
 
@@ -49,14 +36,9 @@ func saveUser(email, pass string) (*uuid.UUID, error) {
 
 	defer db.Close()
 
-	newUserID := uuid.New()
-	newPwHasher := sha256.New()
-	newPwHasher.Write([]byte(pass))
-	newPwHash := fmt.Sprintf("%x", newPwHasher.Sum(nil))
+	regCommand := "INSERT INTO users (id, email, passhash, active) VALUES ($1, $2, $3, $4)"
 
-	regCommand := "INSERT INTO users (id, email, passhash) VALUES ($1, $2, $3)"
-
-	if _, err := db.Exec(regCommand, newUserID, email, newPwHash); err != nil {
+	if _, err := db.Exec(regCommand, user.ID, user.Email, user.PassHash, user.IsActive); err != nil {
 
 		if pqError, ok := err.(*pq.Error); ok && pqError.Code == "23505" {
 			return nil, errors.New("User already exists")
@@ -65,24 +47,21 @@ func saveUser(email, pass string) (*uuid.UUID, error) {
 		return nil, err
 	}
 
-	return &newUserID, nil
+	return &user.ID, nil
 }
 
 func registrationHandler(w http.ResponseWriter, r *http.Request) {
 	email := r.PostFormValue("email")
 	pass := r.PostFormValue("password")
 
-	if !isValidEmail(email) {
-		writeJSONError(w, http.StatusBadRequest, "Invalid Email Address")
+	newUser, err := GenerateUser(email, pass)
+
+	if err != nil {
+		writeJSONError(w, http.StatusBadRequest, err.Error())
 		return
 	}
 
-	if !isValidPassword(pass) {
-		writeJSONError(w, http.StatusBadRequest, "Invalid Password")
-		return
-	}
-
-	userId, err := saveUser(email, pass)
+	userId, err := saveUser(newUser)
 
 	if err != nil {
 		writeJSONError(w, http.StatusBadRequest, err.Error())
